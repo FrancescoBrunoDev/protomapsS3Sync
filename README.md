@@ -1,25 +1,28 @@
 # Protomaps S3 Streaming Transfer
 
-This script automates the process of downloading the latest Protomaps build and uploading it directly to a MinIO S3 bucket using rclone, with robust error handling, resumable transfers, and detailed logging.
+Questo script automatizza il processo di download dell'ultima build di Protomaps e il caricamento diretto su un bucket MinIO S3 usando rclone, con gestione robusta degli errori, trasferimenti resumable e logging dettagliato.
 
-## Features
+## Caratteristiche
 
-- 🌐 **Direct Streaming**: Transfers files directly from HTTP to S3 without local storage
-- 📊 **Detailed Logging**: Multiple log files for different aspects of the transfer
-- 🔄 **Retry Logic**: Automatic retries with exponential backoff
-- 📈 **Progress Monitoring**: Real-time transfer progress and statistics
-- 🧹 **Cleanup**: Automatic cleanup of partial uploads on failure
-- 🛡️ **Error Handling**: Comprehensive error handling and recovery
+- 🌐 **Streaming Diretto**: Trasferisce i file direttamente da HTTP a S3 senza archiviazione locale
+- 📊 **Logging Dettagliato**: File di log multipli per diversi aspetti del trasferimento
+- 🔄 **Logica di Retry**: Retry automatici con backoff esponenziale
+- 📈 **Monitoraggio Progress**: Progress e statistiche in tempo reale
+- 🧹 **Cleanup**: Pulizia automatica degli upload parziali in caso di errore
+- 🛡️ **Gestione Errori**: Gestione e recupero degli errori completi
+- 🔍 **Scoperta Automatica**: Trova automaticamente l'ultima build disponibile via API
+- 📦 **Fallback Intelligente**: Strategia di fallback multipla per trovare i file
+- 🌍 **Mirror Support**: Supporto per mirror multipli di Protomaps
 
-## Prerequisites
+## Prerequisiti
 
-1. **Bun runtime** installed
-2. **rclone** installed (automatically installed in devcontainer)
-3. **MinIO S3 credentials** configured in `.env` file
+1. **Runtime Bun** installato
+2. **rclone** installato (installato automaticamente nel devcontainer)
+3. **Credenziali MinIO S3** configurate nel file `.env`
 
 ## Setup
 
-1. Create a `.env` file with your MinIO credentials:
+1. Crea un file `.env` con le tue credenziali MinIO:
 
 ```env
 MINIO_ENDPOINT=your-minio-endpoint.com
@@ -30,174 +33,218 @@ MINIO_SECRET_KEY=your-secret-key
 MINIO_BUCKET=protomaps
 ```
 
-2. Install dependencies:
+2. Installa le dipendenze:
 
 ```bash
 bun install
 ```
 
-## Usage
+## Utilizzo
 
-### Basic Usage
+### Utilizzo Base
 
-Run the main transfer script:
+Esegui lo script di trasferimento principale:
 
 ```bash
 bun script.ts
 ```
 
-### Monitoring Progress
+### Monitoraggio Progress
 
-The script creates detailed logs in the `/workspaces/alpine/logs/` directory:
+Lo script crea log dettagliati nella directory `/workspaces/alpine/logs/`:
 
-- **`transfer-progress.log`** - High-level progress updates
-- **`rclone-transfer.log`** - Detailed rclone output with transfer statistics
-- **`protomaps-transfer.log`** - Complete application log
+- **`transfer-progress.log`** - Aggiornamenti di progress di alto livello
+- **`rclone-transfer.log`** - Output dettagliato di rclone con statistiche di trasferimento
+- **`protomaps-transfer.log`** - Log completo dell'applicazione
 
-#### Monitor in Real-time
+#### Monitoraggio in Tempo Reale
 
-Use the monitoring helper to watch progress:
+Usa l'helper di monitoraggio per seguire il progress:
 
 ```bash
-# Monitor transfer progress (default)
+# Monitora il progress del trasferimento (default)
 bun monitor.ts
 
-# Monitor detailed rclone output
+# Monitora l'output dettagliato di rclone
 bun monitor.ts rclone
 
-# Monitor main application log
+# Monitora il log principale dell'applicazione
 bun monitor.ts main
 ```
 
-#### Manual Monitoring
+#### Monitoraggio Manuale
 
-You can also monitor logs directly:
+Puoi anche monitorare i log direttamente:
 
 ```bash
-# Watch transfer progress
+# Segui il progress del trasferimento
 tail -f logs/transfer-progress.log
 
-# Watch rclone detailed output
+# Segui l'output dettagliato di rclone
 tail -f logs/rclone-transfer.log
 
-# Watch main application log
+# Segui il log principale dell'applicazione
 tail -f logs/protomaps-transfer.log
 ```
 
-## How It Works
+## Come Funziona
 
-1. **Discovery**: The script searches for the latest Protomaps build by:
-   - Parsing the builds page at https://maps.protomaps.com/builds/
-   - Falling back to date-based URL detection (last 14 days)
+1. **Scoperta Automatica**: Lo script cerca l'ultima build di Protomaps tramite:
+   - API dei metadati delle build: `https://build-metadata.protomaps.dev/builds.json`
+   - Fallback a mirror noti se l'API non è disponibile
+   - File di test per dimostrazione se nessuna build è trovata
 
-2. **Configuration**: 
-   - Configures rclone with MinIO S3 credentials
-   - Sets up HTTP remote for the source URL
-   - Ensures target bucket exists
+2. **Configurazione**: 
+   - Configura rclone con le credenziali MinIO S3
+   - Imposta il remote HTTP per l'URL sorgente
+   - Assicura che il bucket di destinazione esista
 
-3. **Streaming Transfer**:
-   - Uses `rclone copyto` to stream directly from HTTP to S3
-   - No local storage required (handles 120GB+ files)
-   - Real-time progress monitoring with statistics every 10 seconds
+3. **Trasferimento Streaming**:
+   - Usa `rclone copyto` per lo streaming diretto da HTTP a S3
+   - Nessun storage locale richiesto (gestisce file da 120GB+)
+   - Monitoraggio del progress in tempo reale con statistiche ogni 10 secondi
 
-4. **Error Handling**:
-   - Automatic retries (3 attempts) with exponential backoff
-   - Cleanup of partial uploads on failure
-   - Detailed error logging and recovery
+4. **Gestione Errori**:
+   - Retry automatici (3 tentativi) con backoff esponenziale
+   - Pulizia degli upload parziali in caso di errore
+   - Logging dettagliato degli errori e recupero
 
-5. **Verification**:
-   - Verifies successful upload
-   - Lists final bucket contents
+5. **Verifica**:
+   - Verifica l'upload riuscito
+   - Lista il contenuto finale del bucket
+   - Validazione MD5 quando disponibile
 
-## Log Output Examples
+## Esempi di Output dei Log
 
-### Progress Log
+### Log di Progress
 ```
 [2024-01-15T10:30:00.000Z] 🔄 Starting transfer attempt 1/3
 [2024-01-15T10:30:05.000Z] 📊 Transferred: 1.2 GiB / 120.5 GiB, 1%, 45.2 MiB/s, ETA 45m30s
 [2024-01-15T10:30:15.000Z] 📊 Transferred: 2.8 GiB / 120.5 GiB, 2%, 52.1 MiB/s, ETA 42m15s
 ```
 
-### Rclone Log
+### Log di Rclone
 ```
 2024/01/15 10:30:00 INFO  : Starting transfer of 20240115.pmtiles
 2024/01/15 10:30:05 INFO  : 20240115.pmtiles: 1% done, 45.2 MiB/s, ETA 45m30s
 2024/01/15 10:30:15 INFO  : 20240115.pmtiles: 2% done, 52.1 MiB/s, ETA 42m15s
 ```
 
-## Error Recovery
+### Log dell'Applicazione
+```
+[2024-01-15T10:30:00.000Z] 🔍 Searching for latest Protomaps build...
+[2024-01-15T10:30:01.000Z] 🌐 Fetching builds metadata: https://build-metadata.protomaps.dev/builds.json
+[2024-01-15T10:30:02.000Z] 🔍 Found 150 builds in metadata
+[2024-01-15T10:30:03.000Z] ✅ Latest build details:
+[2024-01-15T10:30:03.000Z]    📦 Filename: 20240115.pmtiles
+[2024-01-15T10:30:03.000Z]    📅 Upload date: 2024-01-15
+[2024-01-15T10:30:03.000Z]    📏 Size: 120.50 GB
+[2024-01-15T10:30:03.000Z]    🔐 MD5: abc123ef...
+```
 
-The script includes robust error recovery:
+## Recupero degli Errori
 
-- **Network Issues**: Automatic retries with exponential backoff
-- **Partial Uploads**: Cleanup and restart from beginning
-- **Configuration Errors**: Clear error messages and validation
-- **MinIO Issues**: Connection testing and bucket creation
+Lo script include un robusto recupero degli errori:
 
-## Testing
+- **Problemi di Rete**: Retry automatici con backoff esponenziale
+- **Upload Parziali**: Pulizia e riavvio dall'inizio
+- **Errori di Configurazione**: Messaggi di errore chiari e validazione
+- **Problemi MinIO**: Test di connessione e creazione del bucket
+- **Mirror Fallback**: Tentativo di mirror multipli se l'API principale non è disponibile
+- **File di Test**: Uso di file di test se nessuna build è disponibile
 
-Test your S3 configuration with a small file:
+## Test
+
+Testa la tua configurazione S3 con un file piccolo:
 
 ```bash
 bun test-script.ts
 ```
 
-## Troubleshooting
+Questo script:
+- Configura rclone con le tue credenziali
+- Crea un file di test piccolo
+- Lo carica su MinIO
+- Verifica l'upload
+- Lista il contenuto del bucket
 
-### Common Issues
+## Risoluzione Problemi
 
-1. **MinIO Connection Failed**
-   - Check your `.env` file credentials
-   - Verify MinIO endpoint accessibility
-   - Ensure firewall/network allows connection
+### Problemi Comuni
 
-2. **Transfer Stalls**
-   - Check network connectivity
-   - Monitor rclone log for detailed error messages
-   - Increase timeout values if needed
+1. **Connessione MinIO Fallita**
+   - Controlla le credenziali nel file `.env`
+   - Verifica l'accessibilità dell'endpoint MinIO
+   - Assicurati che firewall/rete permettano la connessione
 
-3. **Out of Space**
-   - Ensure sufficient space in S3 bucket
-   - Check MinIO storage quotas
+2. **Trasferimento Bloccato**
+   - Controlla la connettività di rete
+   - Monitora il log di rclone per messaggi di errore dettagliati
+   - Aumenta i valori di timeout se necessario
 
-### Debug Mode
+3. **Spazio Insufficiente**
+   - Assicurati di avere spazio sufficiente nel bucket S3
+   - Controlla le quote di storage di MinIO
 
-For more verbose output, you can modify the rclone command in the script to include:
+4. **Build Non Trovata**
+   - L'API dei metadati potrebbe essere temporaneamente non disponibile
+   - Lo script proverà automaticamente i mirror noti
+   - Come ultima risorsa, userà un file di test per dimostrare il processo
+
+### Modalità Debug
+
+Per output più verboso, puoi modificare il comando rclone nello script per includere:
 ```bash
 --log-level=DEBUG
 ```
 
-## Performance Tuning
+## Ottimizzazione delle Prestazioni
 
-The script is optimized for large transfers:
+Lo script è ottimizzato per trasferimenti di grandi dimensioni:
 
-- **Streaming**: No local storage required
-- **Timeouts**: Configured for long-running transfers
-- **Retries**: Multiple retry layers (rclone + application level)
-- **Progress**: Regular updates without overwhelming logs
+- **Streaming**: Nessun storage locale richiesto
+- **Timeout**: Configurati per trasferimenti a lungo termine
+- **Retry**: Livelli di retry multipli (rclone + livello applicazione)
+- **Progress**: Aggiornamenti regolari senza sovraccaricare i log
+- **Scoperta Intelligente**: API dei metadati per trovare l'ultima build
+- **Fallback Robusti**: Strategia di fallback multipla per massima affidabilità
 
-## Environment Variables
+## Variabili d'Ambiente
 
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `MINIO_ENDPOINT` | Yes | MinIO server endpoint | - |
-| `MINIO_PORT` | No | MinIO server port | - |
-| `MINIO_USE_SSL` | No | Use HTTPS for MinIO | false |
-| `MINIO_ACCESS_KEY` | Yes | MinIO access key | - |
-| `MINIO_SECRET_KEY` | Yes | MinIO secret key | - |
-| `MINIO_BUCKET` | No | Target bucket name | protomaps |
+| Variabile | Richiesta | Descrizione | Default |
+|-----------|-----------|-------------|---------|
+| `MINIO_ENDPOINT` | Sì | Endpoint del server MinIO | - |
+| `MINIO_PORT` | No | Porta del server MinIO | - |
+| `MINIO_USE_SSL` | No | Usa HTTPS per MinIO | false |
+| `MINIO_ACCESS_KEY` | Sì | Chiave di accesso MinIO | - |
+| `MINIO_SECRET_KEY` | Sì | Chiave segreta MinIO | - |
+| `MINIO_BUCKET` | No | Nome del bucket di destinazione | protomaps |
 
-## File Structure
+## Struttura dei File
 
 ```
 /workspaces/alpine/
-├── script.ts              # Main transfer script
-├── monitor.ts             # Log monitoring helper
-├── test-script.ts         # S3 connection test
-├── .env                   # MinIO credentials
-├── logs/                  # Log directory
-│   ├── transfer-progress.log
-│   ├── rclone-transfer.log
-│   └── protomaps-transfer.log
-└── README.md              # This file
+├── script.ts              # Script di trasferimento principale
+├── monitor.ts             # Helper per monitoraggio log
+├── test-script.ts         # Test di connessione S3
+├── package.json           # Configurazione dipendenze
+├── tsconfig.json          # Configurazione TypeScript
+├── .env                   # Credenziali MinIO
+├── logs/                  # Directory dei log
+│   ├── transfer-progress.log    # Progress di alto livello
+│   ├── rclone-transfer.log      # Output dettagliato rclone
+│   └── protomaps-transfer.log   # Log completo applicazione
+└── README.md              # Questo file
 ```
+
+## API e Mirror Supportati
+
+Lo script supporta:
+
+- **API Primaria**: `https://build-metadata.protomaps.dev/builds.json`
+- **Mirror Noti**:
+  - `https://r2-public.protomaps.com/protomaps-sample-datasets/planet.pmtiles`
+  - `https://data.source.coop/protomaps/openstreetmap/planet.pmtiles`
+  - `https://build.protomaps.com/planet.pmtiles`
+  - `https://builds.protomaps.com/planet.pmtiles`
+- **File di Test**: `terrarium-z12.pmtiles` per test/dimostrazione
