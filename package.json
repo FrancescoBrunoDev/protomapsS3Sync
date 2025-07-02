@@ -1,0 +1,21 @@
+{
+  "name": "protomaps-downloader",
+  "version": "1.0.0",
+  "description": "Download latest Protomaps and upload to S3 MinIO",
+  "main": "script.ts",
+  "scripts": {
+    "start": "bun run script.ts",
+    "logs:clear": "rm -rf logs/*.log",
+    "logs:show": "ls -la logs/",
+    "logs:tail": "tail -f logs/transfer-progress.log"
+  },
+  "dependencies": {
+    "@types/node": "^20.0.0",
+
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.17",
+    "typescript": "^5.0.0"
+  }
+}
