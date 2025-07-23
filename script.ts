@@ -64,8 +64,9 @@ class ProtomapsStreamer {
                 log(`✅ Found build via builds API: ${build.filename}`);
                 return build;
             }
-        } catch (error) {
-            log(`⚠️ Builds API parsing failed: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`⚠️ Builds API parsing failed: ${errorMessage}`);
         }
 
         // List available builds for debugging
@@ -100,7 +101,8 @@ class ProtomapsStreamer {
                     return build;
                 }
             } catch (error) {
-                log(`❌ Mirror failed ${url}: ${error.message}`);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                log(`❌ Mirror failed ${url}: ${errorMessage}`);
             }
         }
 
@@ -124,8 +126,9 @@ class ProtomapsStreamer {
                     size: sizeGB
                 };
             }
-        } catch (error) {
-            log(`❌ Test file also failed: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`❌ Test file also failed: ${errorMessage}`);
         }
 
         throw new Error("❌ Unable to find any Protomaps build or test file");
@@ -205,14 +208,16 @@ class ProtomapsStreamer {
                 } else {
                     log(`⚠️ Build URL not accessible: ${downloadUrl} (HTTP ${testResponse.status})`);
                 }
-            } catch (verifyError) {
-                log(`⚠️ Failed to verify build URL: ${verifyError.message}`);
+            } catch (verifyError: unknown) {
+                const errorMessage = verifyError instanceof Error ? verifyError.message : String(verifyError);
+                log(`⚠️ Failed to verify build URL: ${errorMessage}`);
             }
 
             return null;
 
-        } catch (error) {
-            log(`❌ Failed to fetch builds metadata: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`❌ Failed to fetch builds metadata: ${errorMessage}`);
             return null;
         }
     }
@@ -270,8 +275,9 @@ url = PLACEHOLDER_URL
                         log(`🔧 Test error: ${testResult.stderr.toString().trim()}`);
                     }
                 }
-            } catch (testError) {
-                log(`⚠️ MinIO connection test error: ${testError.message}`);
+            } catch (testError: unknown) {
+                const errorMessage = testError instanceof Error ? testError.message : String(testError);
+                log(`⚠️ MinIO connection test error: ${errorMessage}`);
                 log("⚠️ Will proceed and try during actual operations...");
             }
 
@@ -287,13 +293,15 @@ url = PLACEHOLDER_URL
                         log(`🔧 Bucket creation error: ${mkdirResult.stderr.toString().trim()}`);
                     }
                 }
-            } catch (bucketError) {
-                log(`⚠️ Bucket creation error: ${bucketError.message}`);
+            } catch (bucketError: unknown) {
+                const errorMessage = bucketError instanceof Error ? bucketError.message : String(bucketError);
+                log(`⚠️ Bucket creation error: ${errorMessage}`);
                 log("⚠️ Will proceed anyway - bucket might already exist");
             }
 
-        } catch (error) {
-            log(`❌ Rclone configuration failed: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`❌ Rclone configuration failed: ${errorMessage}`);
             throw error;
         }
     }
@@ -321,8 +329,9 @@ url = PLACEHOLDER_URL
             // Store the file path for use in the transfer
             this.currentFilePath = filePath;
 
-        } catch (error) {
-            log(`❌ Failed to update HTTP remote: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`❌ Failed to update HTTP remote: ${errorMessage}`);
             throw error;
         }
     }
@@ -437,9 +446,10 @@ url = PLACEHOLDER_URL
                     throw new Error(`rclone failed with exit code ${exitCode}: ${errorOutput}`);
                 }
 
-            } catch (error) {
-                log(`❌ Attempt ${attempt} failed: ${error.message}`);
-                logProgress(`❌ Attempt ${attempt} failed: ${error.message}`);
+            } catch (error: unknown) {
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                log(`❌ Attempt ${attempt} failed: ${errorMessage}`);
+                logProgress(`❌ Attempt ${attempt} failed: ${errorMessage}`);
 
                 if (attempt < this.maxRetries) {
                     const delay = this.retryDelayMs * Math.pow(2, attempt - 1); // Exponential backoff
@@ -505,8 +515,9 @@ url = PLACEHOLDER_URL
 
             log("=".repeat(80));
 
-        } catch (error) {
-            log(`❌ Failed to list builds: ${error.message}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`❌ Failed to list builds: ${errorMessage}`);
         }
     }
 
@@ -535,11 +546,14 @@ url = PLACEHOLDER_URL
         } catch (error) {
             const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
             log("=".repeat(60));
-            log(`💥 Process failed after ${duration} minutes: ${error.message}`);
-            logProgress(`💥 Process failed after ${duration} minutes: ${error.message}`);
+
+
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            log(`💥 Process failed after ${duration} minutes: ${errorMessage}`);
+            logProgress(`💥 Process failed after ${duration} minutes: ${errorMessage}`);
 
             // Log error details
-            if (error.stack) {
+            if (error instanceof Error && error.stack) {
                 logToFile(`Stack trace: ${error.stack}`);
             }
 
