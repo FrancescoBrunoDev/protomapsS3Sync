@@ -1,0 +1,108 @@
+import type { MapBuild, MinIOConfig } from "./types.js";
+import { Logger } from "./logger.js";
+import { HealthServer } from "./health-server.js";
+import { ProtomapsClient } from "./protomaps-client.js";
+import { RcloneManager } from "./rclone-manager.js";
+
+export class ProtomapsStreamer {
+    private readonly maxRetries = 3;
+    private readonly retryDelayMs = 5000;
+    
+    private logger: Logger;
+    private healthServer: HealthServer;
+    private protomapsClient: ProtomapsClient;
+    private rcloneManager: RcloneManager;
+
+    constructor(startHealthServer: boolean = true) {
+        this.logger = new Logger();
+        this.healthServer = new HealthServer(this.logger);
+        this.protomapsClient = new ProtomapsClient(this.logger);
+        this.rcloneManager = new RcloneManager(this.logger);
+
+        const logPaths = this.logger.getLogPaths();
+        
+        this.logger.log("🚀 Initializing Protomaps Streamer");
+        this.logger.log(`📁 Logs will be written to: ${logPaths.dir}`);
+        this.logger.log(`📊 Monitor progress with: tail -f ${logPaths.progress}`);
+        this.logger.log(`🔧 Monitor rclone output with: tail -f ${logPaths.rclone}`);
+        
+        // Start health check server only if requested
+        if (startHealthServer) {
+            this.healthServer.start(80);
+        }
+    }
+
+    private getMinIOConfig(): MinIOConfig {
+        const endpoint = process.env.MINIO_ENDPOINT;
+        const port = process.env.MINIO_PORT;
+        const useSSL = process.env.MINIO_USE_SSL === 'true';
+        const accessKey = process.env.MINIO_ACCESS_KEY;
+        const secretKey = process.env.MINIO_SECRET_KEY;
+        const bucket = process.env.MINIO_BUCKET || 'protomaps';
+
+        if (!endpoint || !accessKey || !secretKey) {
+            throw new Error("❌ Missing MinIO configuration in environment variables");
+        }
+
+        return {
+            endpoint,
+            port,
+            useSSL,
+            accessKey,
+            secretKey,
+            bucket
+        };
+    }
+
+    async run(): Promise<void> {
+        const startTime = Date.now();
+        this.logger.log("🚀 Starting Protomaps to S3 streaming process...");
+        this.logger.log("=".repeat(60));
+
+        try {
+            // Step 1: Configure rclone
+            const minioConfig = this.getMinIOConfig();
+            await this.rcloneManager.configure(minioConfig);
+
+            // Step 2: Find latest build
+            const build = await this.protomapsClient.getLatestBuild();
+            this.logger.log(`🎯 Target: ${build.filename} (version: ${build.version})`);
+
+            // Step 3: Stream directly to S3
+            const logPaths = this.logger.getLogPaths();
+            await this.rcloneManager.streamToS3(
+                build.downloadUrl,
+                minioConfig.bucket,
+                build.filename,
+                logPaths.rclone,
+                this.maxRetries,
+                this.retryDelayMs
+            );
+
+            const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
+            this.logger.log("=".repeat(60));
+            this.logger.log(`🎉 Process completed successfully in ${duration} minutes!`);
+            this.logger.log(`📋 ${build.filename} is now available in your S3 bucket`);
+            this.logger.logProgress(`🎉 Process completed successfully in ${duration} minutes!`);
+
+        } catch (error) {
+            const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
+            this.logger.log("=".repeat(60));
+
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            this.logger.log(`💥 Process failed after ${duration} minutes: ${errorMessage}`);
+            this.logger.logProgress(`💥 Process failed after ${duration} minutes: ${errorMessage}`);
+
+            // Log error details
+            if (error instanceof Error && error.stack) {
+                this.logger.logError(`Stack trace: ${error.stack}`);
+            }
+
+            process.exit(1);
+        }
+    }
+
+    stop(): void {
+        this.healthServer.stop();
+    }
+}

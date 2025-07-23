@@ -2,9 +2,13 @@
   "name": "protomaps-downloader",
   "version": "1.0.0",
   "description": "Download latest Protomaps and upload to S3 MinIO",
-  "main": "script.ts",
+  "main": "src/server.ts",
   "scripts": {
-    "start": "bun run script.ts",
+    "start": "bun run src/server.ts",
+    "updateMap": "bun run src/update-maps.ts",
+    "sync": "bun run src/update-maps.ts",
+    "dev:server": "bun run --watch src/server.ts",
+    "dev:sync": "bun run --watch src/update-maps.ts",
     "logs:clear": "rm -rf logs/*.log",
     "logs:show": "ls -la logs/",
     "logs:tail": "tail -f logs/transfer-progress.log"
