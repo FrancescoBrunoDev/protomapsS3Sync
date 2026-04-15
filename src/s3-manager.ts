@@ -228,7 +228,12 @@ export class S3Manager {
           this.logger.log(`📊 File size: ${this.formatBytes(totalSize)}`);
         }
 
-        // Use Upload from @aws-sdk/lib-storage for automatic multipart support
+        const isLowMemory = process.env.LOW_MEMORY_MODE === 'true';
+        const partSize = isLowMemory ? 1 * 1024 * 1024 : 5 * 1024 * 1024;
+        const queueSize = isLowMemory ? 1 : 2;
+
+        this.logger.log(`⚙️ Upload config: partSize=${this.formatBytes(partSize)}, queueSize=${queueSize}, lowMemory=${isLowMemory}`);
+
         const upload = new Upload({
           client: this.client,
           params: {
@@ -237,19 +242,25 @@ export class S3Manager {
             Body: response.body as ReadableStream<Uint8Array>,
             ContentType: response.headers.get('content-type') || 'application/octet-stream',
           },
-          queueSize: 4,
-          partSize: 5 * 1024 * 1024, // 5MB parts for multipart
+          queueSize,
+          partSize,
           leavePartsOnError: false,
         });
 
-        // Track upload progress
+        const logMemory = () => {
+          const usage = process.memoryUsage();
+          return `RSS: ${this.formatBytes(usage.rss)}, Heap: ${this.formatBytes(usage.heapUsed)}/${this.formatBytes(usage.heapTotal)}`;
+        };
+
+        this.logger.log(`🧠 Memory at start: ${logMemory()}`);
+
         upload.on("httpUploadProgress", (progress) => {
           const loaded = progress.loaded || 0;
           const total = progress.total || totalSize || 0;
           const percent = total > 0 ? ((loaded / total) * 100).toFixed(2) : "0";
           const loadedStr = this.formatBytes(loaded);
           const totalStr = total > 0 ? this.formatBytes(total) : 'unknown';
-          this.logger.logProgress(`📊 Uploaded: ${loadedStr} / ${totalStr} (${percent}%)`);
+          this.logger.logProgress(`📊 Uploaded: ${loadedStr} / ${totalStr} (${percent}%) | 🧠 ${logMemory()}`);
         });
 
         await upload.done();
