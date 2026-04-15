@@ -11,4 +11,4 @@ COPY . .
 
 ENV NODE_ENV=production
 
-CMD ["sh"]
+CMD ["tail", "-f", "/dev/null"]
