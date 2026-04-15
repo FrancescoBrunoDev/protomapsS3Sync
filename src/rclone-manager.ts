@@ -22,8 +22,8 @@ export class RcloneManager {
         const configContent = `[seaweedfs]
 type = s3
 provider = Other
-access_key_id = ${config.accessKey}
-secret_access_key = ${config.secretKey}
+access_key_id = "${config.accessKey}"
+secret_access_key = "${config.secretKey}"
 endpoint = ${endpointHostPort}
 force_path_style = true
 
