@@ -143,7 +143,9 @@ export class S3Manager {
     this.logger.log(`🎯 Destination: ${remotePath}`);
     this.logger.log(`📦 File: ${key}`);
 
-    const chunkSize = 10 * 1024 * 1024; // 10MB chunks
+    const chunkSizeMB = parseInt(process.env.CHUNK_SIZE_MB || '50', 10);
+    const chunkSize = chunkSizeMB * 1024 * 1024;
+    this.logger.log(`⚙️ Chunk size: ${chunkSizeMB}MB (set CHUNK_SIZE_MB env var to change)`);
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       this.logger.log(`🔄 Transfer attempt ${attempt}/${maxRetries}`);
