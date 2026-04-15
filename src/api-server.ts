@@ -5,13 +5,6 @@ import { Logger } from "./logger.js";
 
 config();
 
-console.log("🔍 Env var debug:");
-console.log("  Endpoint:", process.env.SEAWEEDFS_ENDPOINT);
-console.log("  Access key length:", process.env.SEAWEEDFS_ACCESS_KEY?.length);
-console.log("  Secret key length:", process.env.SEAWEEDFS_SECRET_KEY?.length);
-console.log("  Secret key first 4:", process.env.SEAWEEDFS_SECRET_KEY?.slice(0, 4));
-console.log("  Secret key last 4:", process.env.SEAWEEDFS_SECRET_KEY?.slice(-4));
-
 let isRunning = false;
 let lastRun: { success: boolean; message: string; timestamp: string } | null = null;
 

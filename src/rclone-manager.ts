@@ -38,8 +38,6 @@ url = PLACEHOLDER_URL
             await $`mkdir -p ${configDir}`;
             await Bun.write(`${configDir}/rclone.conf`, configContent);
             this.logger.log("✅ Rclone base configuration written");
-            this.logger.log("🔍 Config content:");
-            this.logger.log(configContent.replace(config.secretKey, '***SECRET***'));
 
             // Test SeaweedFS connection with a longer timeout and better error handling
             this.logger.log("🔍 Testing SeaweedFS connection...");
