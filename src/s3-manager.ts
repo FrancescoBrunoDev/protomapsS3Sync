@@ -1,14 +1,7 @@
-import { S3Client, ListBucketsCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, CreateBucketCommand } from "@aws-sdk/client-s3";
-import { Upload } from "@aws-sdk/lib-storage";
+import { S3Client, ListBucketsCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand, CreateBucketCommand, UploadPartCommand, CompleteMultipartUploadCommand, CreateMultipartUploadCommand, AbortMultipartUploadCommand } from "@aws-sdk/client-s3";
 import type { Logger } from "./logger.js";
 import type { SeaweedFSConfig } from "./types.js";
 
-/**
- * S3Manager - AWS SDK v3 based S3 client for SeaweedFS S3-compatible API
- *
- * Provides similar interface to RcloneManager for easy replacement.
- * Handles streaming uploads from HTTP URLs directly to S3 buckets using multipart upload.
- */
 export class S3Manager {
   private client: S3Client;
   private bucket: string;
@@ -16,14 +9,6 @@ export class S3Manager {
   private currentFilePath: string = '';
   private isConfigured: boolean = false;
 
-  /**
-   * Constructor that accepts individual parameters
-   * @param endpoint - S3 endpoint URL (e.g., https://seaweedfs.example.com:8333)
-   * @param accessKeyId - S3 access key
-   * @param secretAccessKey - S3 secret key
-   * @param bucket - Default bucket name
-   * @param logger - Logger instance
-   */
   constructor(
     endpoint: string,
     accessKeyId: string,
@@ -54,12 +39,7 @@ export class S3Manager {
     this.logger.log(`🪣 Bucket: ${bucket}`);
   }
 
-  /**
-   * Alternative constructor pattern using SeaweedFSConfig
-   * Creates an unconfigured instance - call configure() before use
-   */
   static createUnconfigured(logger: Logger): S3Manager {
-    // Return instance with dummy values - configure() must be called
     const instance = Object.create(S3Manager.prototype);
     instance.logger = logger;
     instance.bucket = '';
@@ -69,10 +49,6 @@ export class S3Manager {
     return instance;
   }
 
-  /**
-   * Configure the S3 client with SeaweedFS configuration
-   * Matches RcloneManager.configure() interface for easy replacement
-   */
   async configure(config: SeaweedFSConfig): Promise<void> {
     this.logger.log("🔧 Configuring S3 client...");
 
@@ -98,7 +74,6 @@ export class S3Manager {
 
     this.logger.log("✅ S3 client configuration complete");
 
-    // Test connection by listing buckets
     try {
       this.logger.log("🔍 Testing SeaweedFS connection...");
       const buckets = await this.listBuckets();
@@ -109,18 +84,13 @@ export class S3Manager {
       this.logger.log("⚠️ Will proceed and try during actual operations...");
     }
 
-    // Ensure bucket exists
     await this.ensureBucketExists(config.bucket);
   }
 
-  /**
-   * Ensure a bucket exists, create it if it doesn't
-   */
   private async ensureBucketExists(bucketName: string): Promise<void> {
     this.logger.log(`🪣 Ensuring bucket '${bucketName}' exists...`);
 
     try {
-      // Check if bucket exists by listing and checking
       const buckets = await this.listBuckets();
       const bucketExists = buckets.some(b => b === bucketName);
 
@@ -129,7 +99,6 @@ export class S3Manager {
         return;
       }
 
-      // Create bucket
       const createCommand = new CreateBucketCommand({
         Bucket: bucketName
       });
@@ -144,10 +113,6 @@ export class S3Manager {
     }
   }
 
-  /**
-   * List all buckets in the S3 account
-   * @returns Array of bucket names
-   */
   async listBuckets(): Promise<string[]> {
     try {
       this.logger.log("🔍 Listing buckets...");
@@ -163,15 +128,6 @@ export class S3Manager {
     }
   }
 
-  /**
-   * Upload from URL to S3 with automatic multipart upload support
-   *
-   * @param url - Source URL to download from
-   * @param key - S3 object key (path in bucket)
-   * @param bucketName - Optional target bucket (defaults to configured bucket)
-   * @param maxRetries - Maximum retry attempts (default: 3)
-   * @param retryDelayMs - Base delay between retries (default: 5000ms)
-   */
   async uploadFromUrl(
     url: string,
     key: string,
@@ -182,94 +138,103 @@ export class S3Manager {
     const targetBucket = bucketName || this.bucket;
     const remotePath = `${targetBucket}/${key}`;
 
-    this.logger.log(`☁️ Starting direct stream from HTTP to S3...`);
+    this.logger.log(`☁️ Starting chunked upload from HTTP to S3...`);
     this.logger.log(`📍 Source: ${url}`);
     this.logger.log(`🎯 Destination: ${remotePath}`);
     this.logger.log(`📦 File: ${key}`);
+
+    const chunkSize = 10 * 1024 * 1024; // 10MB chunks
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       this.logger.log(`🔄 Transfer attempt ${attempt}/${maxRetries}`);
       this.logger.logProgress(`🔄 Starting transfer attempt ${attempt}/${maxRetries}`);
 
       try {
-        // Check if file already exists and delete it for clean upload
-        try {
-          await this.client.send(new HeadObjectCommand({
-            Bucket: targetBucket,
-            Key: key
-          }));
-          this.logger.log("🗑️  Removing existing file...");
-          await this.client.send(new DeleteObjectCommand({
-            Bucket: targetBucket,
-            Key: key
-          }));
-          this.logger.log("✅ Existing file removed");
-        } catch {
-          // File doesn't exist, continue
-        }
-
-        this.logger.log("🚀 Starting HTTP stream upload...");
-        this.logger.logProgress("🚀 Transfer started - streaming from HTTP...");
-
-        // Fetch the file from URL with streaming
-        const response = await fetch(url);
+        const response = await fetch(url, { method: 'HEAD' });
         if (!response.ok) {
-          throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+          throw new Error(`Failed to fetch HEAD ${url}: ${response.status} ${response.statusText}`);
         }
 
-        if (!response.body) {
-          throw new Error("Response has no body");
+        const totalSize = parseInt(response.headers.get('content-length') || '0', 10);
+        this.logger.log(`📊 Total file size: ${this.formatBytes(totalSize)}`);
+
+        const createMultipart = await this.client.send(new CreateMultipartUploadCommand({
+          Bucket: targetBucket,
+          Key: key,
+          ContentType: 'application/octet-stream',
+        }));
+
+        const uploadId = createMultipart.UploadId;
+        if (!uploadId) {
+          throw new Error("Failed to create multipart upload");
         }
 
-        const contentLength = response.headers.get('content-length');
-        const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
+        this.logger.log(`🚀 Multipart upload created: ${uploadId}`);
 
-        if (totalSize > 0) {
-          this.logger.log(`📊 File size: ${this.formatBytes(totalSize)}`);
-        }
-
-        const isLowMemory = process.env.LOW_MEMORY_MODE === 'true';
-        const partSize = isLowMemory ? 1 * 1024 * 1024 : 5 * 1024 * 1024;
-        const queueSize = isLowMemory ? 1 : 2;
-
-        this.logger.log(`⚙️ Upload config: partSize=${this.formatBytes(partSize)}, queueSize=${queueSize}, lowMemory=${isLowMemory}`);
-
-        const upload = new Upload({
-          client: this.client,
-          params: {
-            Bucket: targetBucket,
-            Key: key,
-            Body: response.body as ReadableStream<Uint8Array>,
-            ContentType: response.headers.get('content-type') || 'application/octet-stream',
-          },
-          queueSize,
-          partSize,
-          leavePartsOnError: false,
-        });
+        const parts: { ETag: string; PartNumber: number }[] = [];
+        let partNumber = 1;
+        let uploadedBytes = 0;
 
         const logMemory = () => {
           const usage = process.memoryUsage();
-          return `RSS: ${this.formatBytes(usage.rss)}, Heap: ${this.formatBytes(usage.heapUsed)}/${this.formatBytes(usage.heapTotal)}`;
+          return `RSS: ${this.formatBytes(usage.rss)}, Heap: ${this.formatBytes(usage.heapUsed)}`;
         };
 
-        this.logger.log(`🧠 Memory at start: ${logMemory()}`);
+        while (uploadedBytes < totalSize) {
+          const start = uploadedBytes;
+          const end = Math.min(uploadedBytes + chunkSize - 1, totalSize - 1);
+          const partSize = end - start + 1;
 
-        upload.on("httpUploadProgress", (progress) => {
-          const loaded = progress.loaded || 0;
-          const total = progress.total || totalSize || 0;
-          const percent = total > 0 ? ((loaded / total) * 100).toFixed(2) : "0";
-          const loadedStr = this.formatBytes(loaded);
-          const totalStr = total > 0 ? this.formatBytes(total) : 'unknown';
-          this.logger.logProgress(`📊 Uploaded: ${loadedStr} / ${totalStr} (${percent}%) | 🧠 ${logMemory()}`);
-        });
+          this.logger.log(`📥 Downloading part ${partNumber}: bytes ${start}-${end} (${this.formatBytes(partSize)})`);
 
-        await upload.done();
+          const partResponse = await fetch(url, {
+            headers: { Range: `bytes=${start}-${end}` },
+          });
+
+          if (!partResponse.ok && partResponse.status !== 206) {
+            throw new Error(`Failed to download part ${partNumber}: ${partResponse.status}`);
+          }
+
+          const partData = new Uint8Array(await partResponse.arrayBuffer());
+
+          this.logger.log(`📤 Uploading part ${partNumber} | 🧠 ${logMemory()}`);
+
+          const uploadPartResponse = await this.client.send(new UploadPartCommand({
+            Bucket: targetBucket,
+            Key: key,
+            UploadId: uploadId,
+            PartNumber: partNumber,
+            Body: partData,
+          }));
+
+          if (!uploadPartResponse.ETag) {
+            throw new Error(`Part ${partNumber} upload failed: no ETag`);
+          }
+
+          parts.push({
+            ETag: uploadPartResponse.ETag,
+            PartNumber: partNumber,
+          });
+
+          uploadedBytes += partSize;
+          const percent = ((uploadedBytes / totalSize) * 100).toFixed(2);
+          this.logger.logProgress(`📊 Uploaded: ${this.formatBytes(uploadedBytes)} / ${this.formatBytes(totalSize)} (${percent}%) | 🧠 ${logMemory()}`);
+
+          partNumber++;
+        }
+
+        this.logger.log(`✅ All parts uploaded, completing multipart...`);
+
+        await this.client.send(new CompleteMultipartUploadCommand({
+          Bucket: targetBucket,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: { Parts: parts },
+        }));
 
         this.logger.log("✅ Transfer completed successfully!");
         this.logger.logProgress("✅ Transfer completed successfully!");
 
-        // Verify the upload
-        this.logger.log("🔍 Verifying uploaded file...");
         const headCommand = new HeadObjectCommand({
           Bucket: targetBucket,
           Key: key,
@@ -279,11 +244,9 @@ export class S3Manager {
         this.logger.log(`✅ File verified: ${this.formatBytes(verifiedSize)}`);
         this.logger.logProgress(`✅ File verified: ${this.formatBytes(verifiedSize)}`);
 
-        // Show final bucket contents
-        this.logger.log("📋 Final bucket contents:");
         await this.logBucketContents(targetBucket);
 
-        return; // Success!
+        return;
 
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -291,21 +254,10 @@ export class S3Manager {
         this.logger.logProgress(`❌ Attempt ${attempt} failed: ${message}`);
 
         if (attempt < maxRetries) {
-          const delay = retryDelayMs * Math.pow(2, attempt - 1); // Exponential backoff
+          const delay = retryDelayMs * Math.pow(2, attempt - 1);
           this.logger.log(`⏳ Waiting ${delay}ms before retry...`);
           this.logger.logProgress(`⏳ Waiting ${delay}ms before retry...`);
           await Bun.sleep(delay);
-
-          // Clean up any partial uploads before retry
-          this.logger.log("🗑️ Cleaning up partial uploads...");
-          try {
-            await this.client.send(new DeleteObjectCommand({
-              Bucket: targetBucket,
-              Key: key
-            }));
-          } catch {
-            // Ignore cleanup errors
-          }
         } else {
           this.logger.log("💥 All retry attempts exhausted");
           this.logger.logProgress("💥 All retry attempts exhausted");
@@ -315,31 +267,21 @@ export class S3Manager {
     }
   }
 
-  /**
-   * Stream from HTTP URL to S3 - RcloneManager-compatible interface
-   *
-   * Matches the signature of RcloneManager.streamToS3() for easy replacement
-   */
   async streamToS3(
     sourceUrl: string,
     bucketName: string,
     filename: string,
-    logPath?: string, // Kept for interface compatibility
+    logPath?: string,
     maxRetries: number = 3,
     retryDelayMs: number = 5000
   ): Promise<void> {
     await this.uploadFromUrl(sourceUrl, filename, bucketName, maxRetries, retryDelayMs);
   }
 
-  /**
-   * Update HTTP remote configuration
-   * Kept for interface compatibility with RcloneManager
-   */
   async updateHttpRemote(url: string): Promise<void> {
     this.logger.log(`🔄 Updating HTTP remote for URL: ${url}`);
 
     try {
-      // Parse the URL to get the base URL and file path
       const urlObj = new URL(url);
       const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
       const filePath = urlObj.pathname;
@@ -347,7 +289,6 @@ export class S3Manager {
       this.logger.log(`🔧 Base URL: ${baseUrl}`);
       this.logger.log(`🔧 File path: ${filePath}`);
 
-      // Store the file path for potential use
       this.currentFilePath = filePath;
 
       this.logger.log("✅ HTTP remote configuration updated");
@@ -358,30 +299,18 @@ export class S3Manager {
     }
   }
 
-  /**
-   * Get the S3 client instance for advanced operations
-   */
   getClient(): S3Client {
     return this.client;
   }
 
-  /**
-   * Get the configured bucket name
-   */
   getBucket(): string {
     return this.bucket;
   }
 
-  /**
-   * Check if the manager has been configured
-   */
   getConfigured(): boolean {
     return this.isConfigured;
   }
 
-  /**
-   * List objects in a bucket for logging purposes
-   */
   private async logBucketContents(bucketName: string): Promise<void> {
     try {
       const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
@@ -406,9 +335,6 @@ export class S3Manager {
     }
   }
 
-  /**
-   * Format bytes to human-readable string
-   */
   private formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
     const k = 1024;
