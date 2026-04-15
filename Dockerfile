@@ -11,4 +11,6 @@ COPY . .
 
 ENV NODE_ENV=production
 
-CMD ["tail", "-f", "/dev/null"]
+EXPOSE 3000
+
+CMD ["bun", "run", "src/api-server.ts"]

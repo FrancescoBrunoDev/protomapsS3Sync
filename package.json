@@ -5,6 +5,7 @@
   "main": "src/server.ts",
   "scripts": {
     "start": "bun run src/server.ts",
+    "api": "bun run src/api-server.ts",
     "updateMap": "bun run src/update-maps.ts",
     "sync": "bun run src/update-maps.ts",
     "dev:server": "bun run --watch src/server.ts",
