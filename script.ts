@@ -256,29 +256,31 @@ class ProtomapsStreamer {
     async configureRclone(): Promise<void> {
         log("🔧 Configuring rclone...");
 
-        const endpoint = process.env.MINIO_ENDPOINT;
-        const port = process.env.MINIO_PORT;
-        const useSSL = process.env.MINIO_USE_SSL === 'true';
-        const accessKey = process.env.MINIO_ACCESS_KEY;
-        const secretKey = process.env.MINIO_SECRET_KEY;
-        const bucketName = process.env.MINIO_BUCKET || 'protomaps';
+        const endpoint = process.env.SEAWEEDFS_ENDPOINT;
+        const accessKey = process.env.SEAWEEDFS_ACCESS_KEY;
+        const secretKey = process.env.SEAWEEDFS_SECRET_KEY;
+        const bucketName = process.env.SEAWEEDFS_BUCKET || 'protomaps';
 
         if (!endpoint || !accessKey || !secretKey) {
-            throw new Error("❌ Missing MinIO configuration in environment variables");
+            throw new Error("❌ Missing SeaweedFS configuration in environment variables");
         }
 
-        log(`🔗 MinIO Endpoint: ${endpoint}${port ? ':' + port : ''}`);
+        // Parse endpoint to extract host:port (rclone S3 expects no protocol)
+        const endpointUrl = new URL(endpoint);
+        const endpointHostPort = endpointUrl.port
+            ? `${endpointUrl.hostname}:${endpointUrl.port}`
+            : endpointUrl.hostname;
+
+        log(`🔗 SeaweedFS Endpoint: ${endpoint}`);
         log(`🪣 Target Bucket: ${bucketName}`);
 
-        const protocol = useSSL ? 'https' : 'http';
-        const fullEndpoint = port ? `${protocol}://${endpoint}:${port}` : `${protocol}://${endpoint}`;
-
-        const configContent = `[minio]
+        const configContent = `[seaweedfs]
 type = s3
-provider = Minio
+provider = Other
 access_key_id = ${accessKey}
 secret_access_key = ${secretKey}
-endpoint = ${fullEndpoint}
+endpoint = ${endpointHostPort}
+force_path_style = true
 
 [http]
 type = http
@@ -292,36 +294,47 @@ url = PLACEHOLDER_URL
             await Bun.write(`${configDir}/rclone.conf`, configContent);
             log("✅ Rclone base configuration written");
 
-            // Test MinIO connection with a longer timeout and better error handling
-            log("🔍 Testing MinIO connection...");
+            // Test SeaweedFS connection with a longer timeout and better error handling
+            log("🔍 Testing SeaweedFS connection...");
             try {
-                const testResult = await $`rclone lsd minio: --timeout=60s --retries=1`.quiet();
+                const testProc = Bun.spawn(['rclone', 'lsd', 'seaweedfs:', '--timeout=60s', '--retries=1'], {
+                    stdout: 'pipe',
+                    stderr: 'pipe'
+                });
+                const exitCode = await testProc.exited;
+                const stderr = testProc.stderr ? await new Response(testProc.stderr).text() : '';
 
-                if (testResult.exitCode === 0) {
-                    log("✅ MinIO connection successful");
+                if (exitCode === 0) {
+                    log("✅ SeaweedFS connection successful");
                 } else {
-                    log("⚠️ MinIO connection test failed, will try during bucket creation...");
-                    log(`🔧 Test exit code: ${testResult.exitCode}`);
-                    if (testResult.stderr) {
-                        log(`🔧 Test error: ${testResult.stderr.toString().trim()}`);
+                    log("⚠️ SeaweedFS connection test failed, will try during bucket creation...");
+                    log(`🔧 Test exit code: ${exitCode}`);
+                    if (stderr) {
+                        log(`🔧 Test error: ${stderr.trim()}`);
                     }
                 }
             } catch (testError: unknown) {
                 const errorMessage = testError instanceof Error ? testError.message : String(testError);
-                log(`⚠️ MinIO connection test error: ${errorMessage}`);
+                log(`⚠️ SeaweedFS connection test error: ${errorMessage}`);
                 log("⚠️ Will proceed and try during actual operations...");
             }
 
             // Ensure bucket exists
             log(`🪣 Ensuring bucket '${bucketName}' exists...`);
             try {
-                const mkdirResult = await $`rclone mkdir minio:${bucketName} --timeout=60s`.quiet();
-                if (mkdirResult.exitCode === 0) {
+                const mkdirProc = Bun.spawn(['rclone', 'mkdir', `seaweedfs:${bucketName}`, '--timeout=60s'], {
+                    stdout: 'pipe',
+                    stderr: 'pipe'
+                });
+                const exitCode = await mkdirProc.exited;
+                const stderr = mkdirProc.stderr ? await new Response(mkdirProc.stderr).text() : '';
+
+                if (exitCode === 0) {
                     log(`✅ Bucket '${bucketName}' ready`);
                 } else {
-                    log(`⚠️ Bucket creation returned exit code ${mkdirResult.exitCode}, but continuing...`);
-                    if (mkdirResult.stderr) {
-                        log(`🔧 Bucket creation error: ${mkdirResult.stderr.toString().trim()}`);
+                    log(`⚠️ Bucket creation returned exit code ${exitCode}, but continuing...`);
+                    if (stderr) {
+                        log(`🔧 Bucket creation error: ${stderr.trim()}`);
                     }
                 }
             } catch (bucketError: unknown) {
@@ -368,8 +381,8 @@ url = PLACEHOLDER_URL
     }
 
     async streamToS3(build: MapBuild): Promise<void> {
-        const bucketName = process.env.MINIO_BUCKET || 'protomaps';
-        const remotePath = `minio:${bucketName}/${build.filename}`;
+        const bucketName = process.env.SEAWEEDFS_BUCKET || 'protomaps';
+        const remotePath = `seaweedfs:${bucketName}/${build.filename}`;
 
         log(`☁️ Starting direct stream from HTTP to S3...`);
         log(`📍 Source: ${build.downloadUrl}`);
@@ -458,7 +471,7 @@ url = PLACEHOLDER_URL
 
                         // Show final bucket contents
                         log("📋 Final bucket contents:");
-                        const listResult = await $`rclone ls minio:${bucketName}/`.quiet();
+                        const listResult = await $`rclone ls seaweedfs:${bucketName}/`.quiet();
                         if (listResult.exitCode === 0) {
                             log(listResult.stdout.toString());
                         }

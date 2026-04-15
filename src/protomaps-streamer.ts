@@ -1,4 +1,4 @@
-import type { MapBuild, MinIOConfig } from "./types.js";
+import type { MapBuild, SeaweedFSConfig } from "./types.js";
 import { Logger } from "./logger.js";
 import { HealthServer } from "./health-server.js";
 import { ProtomapsClient } from "./protomaps-client.js";
@@ -32,22 +32,18 @@ export class ProtomapsStreamer {
         }
     }
 
-    private getMinIOConfig(): MinIOConfig {
-        const endpoint = process.env.MINIO_ENDPOINT;
-        const port = process.env.MINIO_PORT;
-        const useSSL = process.env.MINIO_USE_SSL === 'true';
-        const accessKey = process.env.MINIO_ACCESS_KEY;
-        const secretKey = process.env.MINIO_SECRET_KEY;
-        const bucket = process.env.MINIO_BUCKET || 'protomaps';
+    private getSeaweedFSConfig(): SeaweedFSConfig {
+        const endpoint = process.env.SEAWEEDFS_ENDPOINT;
+        const accessKey = process.env.SEAWEEDFS_ACCESS_KEY;
+        const secretKey = process.env.SEAWEEDFS_SECRET_KEY;
+        const bucket = process.env.SEAWEEDFS_BUCKET || 'protomaps';
 
         if (!endpoint || !accessKey || !secretKey) {
-            throw new Error("❌ Missing MinIO configuration in environment variables");
+            throw new Error("❌ Missing SeaweedFS configuration in environment variables");
         }
 
         return {
             endpoint,
-            port,
-            useSSL,
             accessKey,
             secretKey,
             bucket
@@ -61,8 +57,8 @@ export class ProtomapsStreamer {
 
         try {
             // Step 1: Configure rclone
-            const minioConfig = this.getMinIOConfig();
-            await this.rcloneManager.configure(minioConfig);
+            const seaweedfsConfig = this.getSeaweedFSConfig();
+            await this.rcloneManager.configure(seaweedfsConfig);
 
             // Step 2: Find latest build
             const build = await this.protomapsClient.getLatestBuild();
@@ -72,7 +68,7 @@ export class ProtomapsStreamer {
             const logPaths = this.logger.getLogPaths();
             await this.rcloneManager.streamToS3(
                 build.downloadUrl,
-                minioConfig.bucket,
+                seaweedfsConfig.bucket,
                 build.filename,
                 logPaths.rclone,
                 this.maxRetries,

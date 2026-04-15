@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import type { MinIOConfig } from "./types.js";
+import type { SeaweedFSConfig } from "./types.js";
 import type { Logger } from "./logger.js";
 
 export class RcloneManager {
@@ -7,21 +7,25 @@ export class RcloneManager {
 
     constructor(private logger: Logger) {}
 
-    async configure(config: MinIOConfig): Promise<void> {
+    async configure(config: SeaweedFSConfig): Promise<void> {
         this.logger.log("🔧 Configuring rclone...");
 
-        this.logger.log(`🔗 MinIO Endpoint: ${config.endpoint}${config.port ? ':' + config.port : ''}`);
+        // Parse endpoint to extract host:port (rclone S3 expects no protocol)
+        const endpointUrl = new URL(config.endpoint);
+        const endpointHostPort = endpointUrl.port
+            ? `${endpointUrl.hostname}:${endpointUrl.port}`
+            : endpointUrl.hostname;
+
+        this.logger.log(`🔗 SeaweedFS Endpoint: ${config.endpoint}`);
         this.logger.log(`🪣 Target Bucket: ${config.bucket}`);
 
-        const protocol = config.useSSL ? 'https' : 'http';
-        const fullEndpoint = config.port ? `${protocol}://${config.endpoint}:${config.port}` : `${protocol}://${config.endpoint}`;
-
-        const configContent = `[minio]
+        const configContent = `[seaweedfs]
 type = s3
-provider = Minio
+provider = Other
 access_key_id = ${config.accessKey}
 secret_access_key = ${config.secretKey}
-endpoint = ${fullEndpoint}
+endpoint = ${endpointHostPort}
+force_path_style = true
 
 [http]
 type = http
@@ -35,36 +39,47 @@ url = PLACEHOLDER_URL
             await Bun.write(`${configDir}/rclone.conf`, configContent);
             this.logger.log("✅ Rclone base configuration written");
 
-            // Test MinIO connection with a longer timeout and better error handling
-            this.logger.log("🔍 Testing MinIO connection...");
+            // Test SeaweedFS connection with a longer timeout and better error handling
+            this.logger.log("🔍 Testing SeaweedFS connection...");
             try {
-                const testResult = await $`rclone lsd minio: --timeout=60s --retries=1`.quiet();
+                const testProc = Bun.spawn(['rclone', 'lsd', 'seaweedfs:', '--timeout=60s', '--retries=1'], {
+                    stdout: 'pipe',
+                    stderr: 'pipe'
+                });
+                const exitCode = await testProc.exited;
+                const stderr = testProc.stderr ? await new Response(testProc.stderr).text() : '';
 
-                if (testResult.exitCode === 0) {
-                    this.logger.log("✅ MinIO connection successful");
+                if (exitCode === 0) {
+                    this.logger.log("✅ SeaweedFS connection successful");
                 } else {
-                    this.logger.log("⚠️ MinIO connection test failed, will try during bucket creation...");
-                    this.logger.log(`🔧 Test exit code: ${testResult.exitCode}`);
-                    if (testResult.stderr) {
-                        this.logger.log(`🔧 Test error: ${testResult.stderr.toString().trim()}`);
+                    this.logger.log("⚠️ SeaweedFS connection test failed, will try during bucket creation...");
+                    this.logger.log(`🔧 Test exit code: ${exitCode}`);
+                    if (stderr) {
+                        this.logger.log(`🔧 Test error: ${stderr.trim()}`);
                     }
                 }
             } catch (testError: unknown) {
                 const errorMessage = testError instanceof Error ? testError.message : String(testError);
-                this.logger.log(`⚠️ MinIO connection test error: ${errorMessage}`);
+                this.logger.log(`⚠️ SeaweedFS connection test error: ${errorMessage}`);
                 this.logger.log("⚠️ Will proceed and try during actual operations...");
             }
 
             // Ensure bucket exists
             this.logger.log(`🪣 Ensuring bucket '${config.bucket}' exists...`);
             try {
-                const mkdirResult = await $`rclone mkdir minio:${config.bucket} --timeout=60s`.quiet();
-                if (mkdirResult.exitCode === 0) {
+                const mkdirProc = Bun.spawn(['rclone', 'mkdir', `seaweedfs:${config.bucket}`, '--timeout=60s'], {
+                    stdout: 'pipe',
+                    stderr: 'pipe'
+                });
+                const exitCode = await mkdirProc.exited;
+                const stderr = mkdirProc.stderr ? await new Response(mkdirProc.stderr).text() : '';
+
+                if (exitCode === 0) {
                     this.logger.log(`✅ Bucket '${config.bucket}' ready`);
                 } else {
-                    this.logger.log(`⚠️ Bucket creation returned exit code ${mkdirResult.exitCode}, but continuing...`);
-                    if (mkdirResult.stderr) {
-                        this.logger.log(`🔧 Bucket creation error: ${mkdirResult.stderr.toString().trim()}`);
+                    this.logger.log(`⚠️ Bucket creation returned exit code ${exitCode}, but continuing...`);
+                    if (stderr) {
+                        this.logger.log(`🔧 Bucket creation error: ${stderr.trim()}`);
                     }
                 }
             } catch (bucketError: unknown) {
@@ -111,7 +126,7 @@ url = PLACEHOLDER_URL
     }
 
     async streamToS3(sourceUrl: string, bucketName: string, filename: string, rcloneLogPath: string, maxRetries: number = 3, retryDelayMs: number = 5000): Promise<void> {
-        const remotePath = `minio:${bucketName}/${filename}`;
+        const remotePath = `seaweedfs:${bucketName}/${filename}`;
 
         this.logger.log(`☁️ Starting direct stream from HTTP to S3...`);
         this.logger.log(`📍 Source: ${sourceUrl}`);
@@ -129,7 +144,7 @@ url = PLACEHOLDER_URL
                 // Check if partial file exists and clean it up
                 const checkResult = await $`rclone ls ${remotePath}`.quiet();
                 if (checkResult.exitCode === 0) {
-                    this.logger.log("🗑️ Removing existing partial file...");
+                    this.logger.log("🗑️  Removing existing partial file...");
                     await $`rclone delete ${remotePath}`.quiet();
                     this.logger.log("✅ Existing file removed");
                 }
@@ -200,7 +215,7 @@ url = PLACEHOLDER_URL
 
                         // Show final bucket contents
                         this.logger.log("📋 Final bucket contents:");
-                        const listResult = await $`rclone ls minio:${bucketName}/`.quiet();
+                        const listResult = await $`rclone ls seaweedfs:${bucketName}/`.quiet();
                         if (listResult.exitCode === 0) {
                             this.logger.log(listResult.stdout.toString());
                         }

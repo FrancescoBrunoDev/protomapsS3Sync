@@ -40,7 +40,7 @@ src/
 - Contains all TypeScript interfaces and types
 - `MapBuild` - Represents a Protomaps build
 - `BuildMetadata` - API response structure
-- `MinIOConfig` - MinIO connection configuration
+- `SeaweedFSConfig` - SeaweedFS connection configuration
 
 ### `src/logger.ts`
 - Centralized logging system

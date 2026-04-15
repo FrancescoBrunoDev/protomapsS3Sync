@@ -12,10 +12,8 @@ export interface BuildMetadata {
     md5sum?: string;
 }
 
-export interface MinIOConfig {
+export interface SeaweedFSConfig {
     endpoint: string;
-    port?: string;
-    useSSL: boolean;
     accessKey: string;
     secretKey: string;
     bucket: string;

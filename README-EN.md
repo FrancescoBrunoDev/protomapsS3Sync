@@ -1,6 +1,6 @@
 # Protomaps S3 Sync
 
-A modular TypeScript application that downloads the latest Protomaps basemap and streams it directly to S3-compatible storage (MinIO) using rclone.
+A modular TypeScript application that downloads the latest Protomaps basemap and streams it directly to S3-compatible storage (SeaweedFS) using rclone.
 
 ## 🏗️ Architecture
 
@@ -34,17 +34,15 @@ src/
 
 - Bun runtime
 - rclone installed and configured
-- MinIO/S3 credentials in environment variables
+- SeaweedFS/S3 credentials in environment variables
 
 ## 🔧 Environment Variables
 
 ```bash
-MINIO_ENDPOINT=your-minio-endpoint.com
-MINIO_PORT=443
-MINIO_USE_SSL=true
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
-MINIO_BUCKET=protomaps
+SEAWEEDFS_ENDPOINT=https://your-seaweedfs-endpoint.com:8333
+SEAWEEDFS_ACCESS_KEY=your-access-key
+SEAWEEDFS_SECRET_KEY=your-secret-key
+SEAWEEDFS_BUCKET=protomaps
 ```
 
 ## 🏃 Usage

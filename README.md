@@ -1,6 +1,6 @@
 # Protomaps S3 Streaming Transfer
 
-Questo script automatizza il processo di download dell'ultima build di Protomaps e il caricamento diretto su un bucket MinIO S3 usando rclone, con gestione robusta degli errori, trasferimenti resumable e logging dettagliato.
+Questo script automatizza il processo di download dell'ultima build di Protomaps e il caricamento diretto su un bucket SeaweedFS S3 usando rclone, con gestione robusta degli errori, trasferimenti resumable e logging dettagliato.
 
 ## Caratteristiche
 
@@ -18,19 +18,17 @@ Questo script automatizza il processo di download dell'ultima build di Protomaps
 
 1. **Runtime Bun** installato
 2. **rclone** installato (installato automaticamente nel devcontainer)
-3. **Credenziali MinIO S3** configurate nel file `.env`
+3. **Credenziali SeaweedFS S3** configurate nel file `.env`
 
 ## Setup
 
-1. Crea un file `.env` con le tue credenziali MinIO:
+1. Crea un file `.env` con le tue credenziali SeaweedFS:
 
 ```env
-MINIO_ENDPOINT=your-minio-endpoint.com
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
-MINIO_BUCKET=protomaps
+SEAWEEDFS_ENDPOINT=https://your-seaweedfs-endpoint.com:8333
+SEAWEEDFS_ACCESS_KEY=your-access-key
+SEAWEEDFS_SECRET_KEY=your-secret-key
+SEAWEEDFS_BUCKET=protomaps
 ```
 
 2. Installa le dipendenze:
@@ -94,10 +92,10 @@ tail -f logs/protomaps-transfer.log
    - Fallback a mirror noti se l'API non è disponibile
    - File di test per dimostrazione se nessuna build è trovata
 
-2. **Configurazione**: 
-   - Configura rclone con le credenziali MinIO S3
-   - Imposta il remote HTTP per l'URL sorgente
-   - Assicura che il bucket di destinazione esista
+2. **Configurazione**:
+    - Configura rclone con le credenziali SeaweedFS S3
+    - Imposta il remote HTTP per l'URL sorgente
+    - Assicura che il bucket di destinazione esista
 
 3. **Trasferimento Streaming**:
    - Usa `rclone copyto` per lo streaming diretto da HTTP a S3
@@ -149,7 +147,7 @@ Lo script include un robusto recupero degli errori:
 - **Problemi di Rete**: Retry automatici con backoff esponenziale
 - **Upload Parziali**: Pulizia e riavvio dall'inizio
 - **Errori di Configurazione**: Messaggi di errore chiari e validazione
-- **Problemi MinIO**: Test di connessione e creazione del bucket
+- **Problemi SeaweedFS**: Test di connessione e creazione del bucket
 - **Mirror Fallback**: Tentativo di mirror multipli se l'API principale non è disponibile
 - **File di Test**: Uso di file di test se nessuna build è disponibile
 
@@ -164,7 +162,7 @@ bun test-script.ts
 Questo script:
 - Configura rclone con le tue credenziali
 - Crea un file di test piccolo
-- Lo carica su MinIO
+- Lo carica su SeaweedFS
 - Verifica l'upload
 - Lista il contenuto del bucket
 
@@ -172,9 +170,9 @@ Questo script:
 
 ### Problemi Comuni
 
-1. **Connessione MinIO Fallita**
+1. **Connessione SeaweedFS Fallita**
    - Controlla le credenziali nel file `.env`
-   - Verifica l'accessibilità dell'endpoint MinIO
+   - Verifica l'accessibilità dell'endpoint SeaweedFS
    - Assicurati che firewall/rete permettano la connessione
 
 2. **Trasferimento Bloccato**
@@ -184,7 +182,7 @@ Questo script:
 
 3. **Spazio Insufficiente**
    - Assicurati di avere spazio sufficiente nel bucket S3
-   - Controlla le quote di storage di MinIO
+   - Controlla le quote di storage di SeaweedFS
 
 4. **Build Non Trovata**
    - L'API dei metadati potrebbe essere temporaneamente non disponibile
@@ -213,12 +211,10 @@ Lo script è ottimizzato per trasferimenti di grandi dimensioni:
 
 | Variabile | Richiesta | Descrizione | Default |
 |-----------|-----------|-------------|---------|
-| `MINIO_ENDPOINT` | Sì | Endpoint del server MinIO | - |
-| `MINIO_PORT` | No | Porta del server MinIO | - |
-| `MINIO_USE_SSL` | No | Usa HTTPS per MinIO | false |
-| `MINIO_ACCESS_KEY` | Sì | Chiave di accesso MinIO | - |
-| `MINIO_SECRET_KEY` | Sì | Chiave segreta MinIO | - |
-| `MINIO_BUCKET` | No | Nome del bucket di destinazione | protomaps |
+| `SEAWEEDFS_ENDPOINT` | Sì | Endpoint completo del server SeaweedFS (incluso protocollo e porta, es: `https://seaweedfs.example.com:8333`) | - |
+| `SEAWEEDFS_ACCESS_KEY` | Sì | Chiave di accesso SeaweedFS | - |
+| `SEAWEEDFS_SECRET_KEY` | Sì | Chiave segreta SeaweedFS | - |
+| `SEAWEEDFS_BUCKET` | No | Nome del bucket di destinazione | protomaps |
 
 ## Struttura dei File
 
@@ -229,7 +225,7 @@ Lo script è ottimizzato per trasferimenti di grandi dimensioni:
 ├── test-script.ts         # Test di connessione S3
 ├── package.json           # Configurazione dipendenze
 ├── tsconfig.json          # Configurazione TypeScript
-├── .env                   # Credenziali MinIO
+├── .env                   # Credenziali SeaweedFS
 ├── logs/                  # Directory dei log
 │   ├── transfer-progress.log    # Progress di alto livello
 │   ├── rclone-transfer.log      # Output dettagliato rclone
