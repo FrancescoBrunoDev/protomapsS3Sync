@@ -29,7 +29,6 @@ force_path_style = true
 use_ssl = ${useSsl}
 disable_checksum = true
 no_check_bucket = true
-use_multipart_uploads = false
 
 [http]
 type = http
@@ -172,10 +171,8 @@ url = PLACEHOLDER_URL
                     '--expect-continue-timeout=5s',
                     '--multi-thread-streams=0',
                     '--s3-chunk-size=5M',
-                    '--s3-upload-cutoff=200G',
                     '--s3-disable-checksum',
-                    '--s3-no-check-bucket',
-                    '--s3-use-multipart-uploads=false'
+                    '--s3-no-check-bucket'
                 ];
 
                 this.logger.log(`🔧 Running: ${rcloneCmd.join(' ')}`);
