@@ -22,8 +22,8 @@ export class RcloneManager {
         const configContent = `[seaweedfs]
 type = s3
 provider = Other
-access_key_id = "${config.accessKey}"
-secret_access_key = "${config.secretKey}"
+access_key_id = ${config.accessKey}
+secret_access_key = ${config.secretKey}
 endpoint = ${endpointHostPort}
 force_path_style = true
 
@@ -115,8 +115,7 @@ url = PLACEHOLDER_URL
             await Bun.write(configPath, updatedConfig);
             this.logger.log("✅ HTTP remote configuration updated");
 
-            // Store the file path for use in the transfer
-            this.currentFilePath = filePath;
+            this.currentFilePath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
 
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -167,7 +166,9 @@ url = PLACEHOLDER_URL
                     '--low-level-retries=10',
                     '--timeout=0',
                     '--contimeout=60s',
-                    '--expect-continue-timeout=5s'
+                    '--expect-continue-timeout=5s',
+                    '--multi-thread-streams=0',
+                    '--s3-chunk-size=5M'
                 ];
 
                 this.logger.log(`🔧 Running: ${rcloneCmd.join(' ')}`);
@@ -182,23 +183,34 @@ url = PLACEHOLDER_URL
                 const decoder = new TextDecoder();
                 let buffer = '';
 
-                if (proc.stdout) {
-                    for await (const chunk of proc.stdout) {
-                        const text = decoder.decode(chunk);
-                        buffer += text;
-
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop() || '';
-
-                        for (const line of lines) {
-                            if (line.trim()) {
-                                this.logger.logProgress(`📊 ${line.trim()}`);
+                const stdoutPromise = (async () => {
+                    if (proc.stdout) {
+                        for await (const chunk of proc.stdout) {
+                            const text = decoder.decode(chunk);
+                            buffer += text;
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || '';
+                            for (const line of lines) {
+                                if (line.trim()) {
+                                    this.logger.logProgress(`📊 ${line.trim()}`);
+                                }
                             }
                         }
                     }
-                }
+                })();
 
-                const exitCode = await proc.exited;
+                const stderrPromise = (async () => {
+                    let stderrBuffer = '';
+                    if (proc.stderr) {
+                        for await (const chunk of proc.stderr) {
+                            stderrBuffer += decoder.decode(chunk);
+                        }
+                    }
+                    return stderrBuffer;
+                })();
+
+                const [exitCode, stderrOutput] = await Promise.all([proc.exited, stderrPromise]);
+                await stdoutPromise;
 
                 if (exitCode === 0) {
                     this.logger.log("✅ Transfer completed successfully!");
@@ -226,12 +238,8 @@ url = PLACEHOLDER_URL
                     }
 
                 } else {
-                    // Read stderr for error details
-                    let errorOutput = '';
-                    if (proc.stderr) {
-                        errorOutput = decoder.decode(await Bun.readableStreamToArrayBuffer(proc.stderr));
-                    }
-                    throw new Error(`rclone failed with exit code ${exitCode}: ${errorOutput}`);
+                    this.logger.log(`🔴 rclone stderr:\n${stderrOutput}`);
+                    throw new Error(`rclone failed with exit code ${exitCode}: ${stderrOutput}`);
                 }
 
             } catch (error: unknown) {

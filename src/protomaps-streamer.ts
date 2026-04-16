@@ -2,7 +2,7 @@ import type { MapBuild, SeaweedFSConfig } from "./types.js";
 import { Logger } from "./logger.js";
 import { HealthServer } from "./health-server.js";
 import { ProtomapsClient } from "./protomaps-client.js";
-import { S3Manager } from "./s3-manager.js";
+import { RcloneManager } from "./rclone-manager.js";
 
 export class ProtomapsStreamer {
     private readonly maxRetries = 3;
@@ -11,12 +11,13 @@ export class ProtomapsStreamer {
     private logger: Logger;
     private healthServer: HealthServer;
     private protomapsClient: ProtomapsClient;
-    private s3Manager: S3Manager | null = null;
+    private rcloneManager: RcloneManager;
 
     constructor(startHealthServer: boolean = true) {
         this.logger = new Logger();
         this.healthServer = new HealthServer(this.logger);
         this.protomapsClient = new ProtomapsClient(this.logger);
+        this.rcloneManager = new RcloneManager(this.logger);
 
         const logPaths = this.logger.getLogPaths();
 
@@ -53,23 +54,21 @@ export class ProtomapsStreamer {
         this.logger.log("=".repeat(60));
 
         try {
-            const config = this.getSeaweedFSConfig();
-
-            this.s3Manager = new S3Manager(
-                config.endpoint,
-                config.accessKey,
-                config.secretKey,
-                config.bucket,
-                this.logger
-            );
-
-            const buckets = await this.s3Manager.listBuckets();
-            this.logger.log(`📋 Available buckets: ${buckets.join(", ") || "none"}`);
+            const seaweedfsConfig = this.getSeaweedFSConfig();
+            await this.rcloneManager.configure(seaweedfsConfig);
 
             const build = await this.protomapsClient.getLatestBuild();
             this.logger.log(`🎯 Target: ${build.filename} (version: ${build.version})`);
 
-            await this.s3Manager.uploadFromUrl(build.downloadUrl, build.filename);
+            const logPaths = this.logger.getLogPaths();
+            await this.rcloneManager.streamToS3(
+                build.downloadUrl,
+                seaweedfsConfig.bucket,
+                build.filename,
+                logPaths.rclone,
+                this.maxRetries,
+                this.retryDelayMs
+            );
 
             const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
             this.logger.log("=".repeat(60));
