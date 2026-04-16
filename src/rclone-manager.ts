@@ -45,15 +45,23 @@ url = PLACEHOLDER_URL
             // Test SeaweedFS connection with a longer timeout and better error handling
             this.logger.log("🔍 Testing SeaweedFS connection...");
             try {
-                const testProc = Bun.spawn(['rclone', 'lsd', 'seaweedfs:', '--timeout=60s', '--retries=1'], {
+                const testProc = Bun.spawn(['rclone', 'lsd', 'seaweedfs:', '--timeout=15s', '--contimeout=5s', '--retries=1'], {
                     stdout: 'pipe',
                     stderr: 'pipe'
                 });
-                const exitCode = await testProc.exited;
+                const exitCode = await Promise.race([
+                    testProc.exited,
+                    Bun.sleep(20000).then(() => {
+                        try { testProc.kill(); } catch {}
+                        return -1;
+                    })
+                ]);
                 const stderr = testProc.stderr ? await new Response(testProc.stderr).text() : '';
 
                 if (exitCode === 0) {
                     this.logger.log("✅ SeaweedFS connection successful");
+                } else if (exitCode === -1) {
+                    this.logger.log("⚠️ SeaweedFS connection test timed out after 20s, continuing...");
                 } else {
                     this.logger.log("⚠️ SeaweedFS connection test failed, will try during bucket creation...");
                     this.logger.log(`🔧 Test exit code: ${exitCode}`);
@@ -70,15 +78,23 @@ url = PLACEHOLDER_URL
             // Ensure bucket exists
             this.logger.log(`🪣 Ensuring bucket '${config.bucket}' exists...`);
             try {
-                const mkdirProc = Bun.spawn(['rclone', 'mkdir', `seaweedfs:${config.bucket}`, '--timeout=60s'], {
+                const mkdirProc = Bun.spawn(['rclone', 'mkdir', `seaweedfs:${config.bucket}`, '--timeout=20s', '--contimeout=5s'], {
                     stdout: 'pipe',
                     stderr: 'pipe'
                 });
-                const exitCode = await mkdirProc.exited;
+                const exitCode = await Promise.race([
+                    mkdirProc.exited,
+                    Bun.sleep(25000).then(() => {
+                        try { mkdirProc.kill(); } catch {}
+                        return -1;
+                    })
+                ]);
                 const stderr = mkdirProc.stderr ? await new Response(mkdirProc.stderr).text() : '';
 
                 if (exitCode === 0) {
                     this.logger.log(`✅ Bucket '${config.bucket}' ready`);
+                } else if (exitCode === -1) {
+                    this.logger.log("⚠️ Bucket readiness check timed out after 25s, continuing...");
                 } else {
                     this.logger.log(`⚠️ Bucket creation returned exit code ${exitCode}, but continuing...`);
                     if (stderr) {
