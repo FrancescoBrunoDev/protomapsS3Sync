@@ -132,7 +132,6 @@ url = PLACEHOLDER_URL
         this.logger.log(`🎯 Destination: ${remotePath}`);
         this.logger.log(`📦 File: ${filename}`);
 
-        // Update HTTP remote configuration
         await this.updateHttpRemote(sourceUrl);
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -151,24 +150,25 @@ url = PLACEHOLDER_URL
                 this.logger.log("🚀 Starting rclone transfer...");
                 this.logger.logProgress("🚀 Transfer started - monitoring rclone output...");
 
-                // Use rclone copyto for direct streaming with detailed progress
                 const httpSource = `http:${this.currentFilePath}`;
                 const rcloneCmd = [
                     'rclone', 'copyto',
                     httpSource,
                     remotePath,
+                    '--config', `${process.env.HOME}/.config/rclone/rclone.conf`,
                     '--progress',
                     '--stats=10s',
                     '--stats-log-level=INFO',
                     '--log-file=' + rcloneLogPath,
-                    '--log-level=INFO',
+                    '--log-level=DEBUG',
                     '--retries=3',
                     '--low-level-retries=10',
                     '--timeout=0',
                     '--contimeout=60s',
                     '--expect-continue-timeout=5s',
                     '--multi-thread-streams=0',
-                    '--s3-chunk-size=5M'
+                    '--s3-chunk-size=5M',
+                    '--s3-upload-cutoff=5M'
                 ];
 
                 this.logger.log(`🔧 Running: ${rcloneCmd.join(' ')}`);
@@ -239,6 +239,24 @@ url = PLACEHOLDER_URL
 
                 } else {
                     this.logger.log(`🔴 rclone stderr:\n${stderrOutput}`);
+                    try {
+                        const tailProc = Bun.spawn([
+                            'sh',
+                            '-lc',
+                            `tail -n 80 ${rcloneLogPath}`
+                        ], { stdout: 'pipe', stderr: 'pipe' });
+                        const tailOut = tailProc.stdout ? await new Response(tailProc.stdout).text() : '';
+                        const tailErr = tailProc.stderr ? await new Response(tailProc.stderr).text() : '';
+                        if (tailOut.trim()) {
+                            this.logger.log(`🔴 rclone log tail:\n${tailOut}`);
+                        }
+                        if (tailErr.trim()) {
+                            this.logger.log(`🔴 rclone tail stderr:\n${tailErr}`);
+                        }
+                    } catch (tailError: unknown) {
+                        const tailMessage = tailError instanceof Error ? tailError.message : String(tailError);
+                        this.logger.log(`⚠️ Could not read rclone log tail: ${tailMessage}`);
+                    }
                     throw new Error(`rclone failed with exit code ${exitCode}: ${stderrOutput}`);
                 }
 
