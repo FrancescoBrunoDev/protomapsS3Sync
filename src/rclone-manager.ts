@@ -159,10 +159,20 @@ url = PLACEHOLDER_URL
 
             try {
                 // Check if partial file exists and clean it up
-                const checkResult = await $`rclone ls ${remotePath}`.quiet();
-                if (checkResult.exitCode === 0) {
+                let remoteExists = false;
+                try {
+                    const checkResult = await $`rclone ls ${remotePath}`.quiet();
+                    remoteExists = checkResult.exitCode === 0;
+                } catch {
+                    remoteExists = false;
+                }
+
+                if (remoteExists) {
                     this.logger.log("🗑️  Removing existing partial file...");
-                    await $`rclone delete ${remotePath}`.quiet();
+                    try {
+                        await $`rclone delete ${remotePath}`.quiet();
+                    } catch {
+                    }
                     this.logger.log("✅ Existing file removed");
                 }
 
@@ -293,7 +303,10 @@ url = PLACEHOLDER_URL
 
                     // Clean up any partial uploads before retry
                     this.logger.log("🗑️ Cleaning up partial uploads...");
-                    await $`rclone delete ${remotePath}`.quiet();
+                    try {
+                        await $`rclone delete ${remotePath}`.quiet();
+                    } catch {
+                    }
                 } else {
                     this.logger.log("💥 All retry attempts exhausted");
                     this.logger.logProgress("💥 All retry attempts exhausted");
