@@ -10,22 +10,26 @@ export class RcloneManager {
     async configure(config: SeaweedFSConfig): Promise<void> {
         this.logger.log("🔧 Configuring rclone...");
 
-        // Parse endpoint to extract host:port (rclone S3 expects no protocol)
         const endpointUrl = new URL(config.endpoint);
         const endpointHostPort = endpointUrl.port
             ? `${endpointUrl.hostname}:${endpointUrl.port}`
             : endpointUrl.hostname;
+        const useSsl = endpointUrl.protocol === 'https:';
 
         this.logger.log(`🔗 SeaweedFS Endpoint: ${config.endpoint}`);
         this.logger.log(`🪣 Target Bucket: ${config.bucket}`);
 
-        const configContent = `[seaweedfs]
+const configContent = `[seaweedfs]
 type = s3
 provider = Other
 access_key_id = ${config.accessKey}
 secret_access_key = ${config.secretKey}
 endpoint = ${endpointHostPort}
 force_path_style = true
+use_ssl = ${useSsl}
+disable_checksum = true
+no_check_bucket = true
+use_multipart_uploads = false
 
 [http]
 type = http
@@ -168,7 +172,10 @@ url = PLACEHOLDER_URL
                     '--expect-continue-timeout=5s',
                     '--multi-thread-streams=0',
                     '--s3-chunk-size=5M',
-                    '--s3-upload-cutoff=5M'
+                    '--s3-upload-cutoff=200G',
+                    '--s3-disable-checksum',
+                    '--s3-no-check-bucket',
+                    '--s3-use-multipart-uploads=false'
                 ];
 
                 this.logger.log(`🔧 Running: ${rcloneCmd.join(' ')}`);
